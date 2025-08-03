@@ -299,27 +299,101 @@ function printResults(results) {
   });
 }
 
-// 現在のタイムスタンプを含むファイル名を生成
-function generateTimestampFilename(prefix = '', extension = 'txt') {
-  const now = new Date();
-  const timestamp = now.toISOString()
-    .replace(/[:-]/g, '')  // コロンとハイフンを削除
-    .replace(/\..+$/, '')   // ミリ秒部分を削除
-    .replace('T', '-');     // Tをハイフンに置換
-  
-  return `${prefix}${timestamp}.${extension}`;
+// タイムスタンプ付きのフォルダを生成
+function createTimestampFolder(baseDir = './output') {
+  try {
+    // ベースディレクトリが存在しない場合は作成
+    if (!fs.existsSync(baseDir)) {
+      fs.mkdirSync(baseDir, { recursive: true });
+    }
+    
+    // タイムスタンプを生成
+    const now = new Date();
+    const timestamp = now.toISOString()
+      .replace(/[:-]/g, '')  // コロンとハイフンを削除
+      .replace(/\..+$/, '')   // ミリ秒部分を削除
+      .replace('T', '-');     // Tをハイフンに置換
+    
+    // 出力フォルダのパスを生成
+    const folderPath = path.join(baseDir, `data-${timestamp}`);
+    
+    // フォルダを作成
+    fs.mkdirSync(folderPath, { recursive: true });
+    console.log(`出力フォルダを作成しました✨: ${folderPath}`);
+    
+    return folderPath;
+  } catch (error) {
+    console.error(`フォルダ作成中にエラーが発生しました💦: ${error.message}`);
+    return baseDir;  // エラーの場合はベースディレクトリを返す
+  }
+}
+
+/**
+ * データをファイルに保存
+ * @param {string} folderPath - 保存先フォルダパス
+ * @param {string} fileName - ファイル名
+ * @param {string|Object} data - 保存するデータ
+ * @param {boolean} isJson - JSONとして保存するかどうか
+ * @returns {string} 保存したファイルのパス
+ */
+function saveDataToFile(folderPath, fileName, data, isJson = true) {
+  try {
+    const filePath = path.join(folderPath, fileName);
+    const content = isJson ? (typeof data === 'string' ? data : JSON.stringify(data, null, 2)) : data;
+    
+    fs.writeFileSync(filePath, content);
+    console.log(`データを ${filePath} に保存しました💾`);
+    
+    return filePath;
+  } catch (error) {
+    console.error(`ファイル保存中にエラーが発生しました💦: ${error.message}`);
+    return null;
+  }
 }
 
 /**
  * 最新データ情報をテキストファイルに出力
  * @param {Array} latestDataList - 最新データのリスト
+ * @param {string} folderPath - 保存先フォルダパス
+ * @returns {string} 保存したファイルのパス
  */
-function saveLatestDataSummary(latestDataList) {
+function saveLatestDataSummary(latestDataList, folderPath) {
   try {
-    // タイムスタンプを含むファイル名を生成
-    const filename = generateTimestampFilename('dataset-', 'txt');
-    
     let content = '📊 最新データ情報:\n';
+    
+    // 地域情報を抽出（最初のデータから取得）
+    let areaInfo = '';
+    if (latestDataList.length > 0) {
+      const firstData = latestDataList[0];
+      const classObjs = firstData.GET_STATS_DATA?.STATISTICAL_DATA?.CLASS_INF?.CLASS_OBJ;
+      
+      if (classObjs) {
+        const areaObj = Array.isArray(classObjs) 
+          ? classObjs.find(obj => obj['@id'] === 'area')
+          : classObjs['@id'] === 'area' ? classObjs : null;
+        
+        if (areaObj && areaObj.CLASS) {
+          const areaClass = areaObj.CLASS;
+          const areaCode = areaClass['@code'] || 'N/A';
+          const areaName = areaClass['@name'] || 'N/A';
+          const areaLevel = areaClass['@level'] || 'N/A';
+          
+          areaInfo = `🏙️ 地域情報:\n`;
+          areaInfo += `- コード: ${areaCode}\n`;
+          areaInfo += `- 名称: ${areaName}\n`;
+          areaInfo += `- レベル: ${areaLevel}\n`;
+          if (areaClass['@parentCode']) {
+            areaInfo += `- 親コード: ${areaClass['@parentCode']}\n`;
+          }
+          areaInfo += '\n';
+        }
+      }
+    }
+    
+    // 地域情報を先に出力
+    if (areaInfo) {
+      content += '\n' + areaInfo;
+    }
     
     latestDataList.forEach((latestData, index) => {
       if (latestData.GET_STATS_DATA?.STATISTICAL_DATA?.DATA_INF?.VALUE?.[0]) {
@@ -365,9 +439,7 @@ function saveLatestDataSummary(latestDataList) {
       }
     });
     
-    fs.writeFileSync(filename, content);
-    console.log(`最新データの要約を ${filename} に保存しました📝✨`);
-    return filename;
+    return saveDataToFile(folderPath, 'summary.txt', content, false);
   } catch (error) {
     console.error(`最新データの要約保存中にエラーが発生しました💦: ${error.message}`);
     return null;
@@ -421,75 +493,73 @@ async function main() {
     // 結果の詳細を表示
     printResults(results);
     
+    // タイムスタンプ付きフォルダを作成
+    const outputFolder = createTimestampFolder();
+    
     // 結果を処理
     const formattedData = JSON.stringify(results, null, 2);
     
-    // 出力処理
-    if (options.output) {
-      fs.writeFileSync(options.output, formattedData);
-      console.log(`データを ${options.output} に保存しました💾`);
-    } else {
-      console.log('取得したデータ:');
-      console.log(formattedData);
-    }
+    // 全データの保存
+    saveDataToFile(outputFolder, 'result.json', formattedData);
     
     // 最新データのみを別ファイルに出力
-    if (options.latest) {
-      // 各統計データの最新情報を抽出
-      const latestDataList = results.map(data => extractLatestData(data));
-      const latestFormattedData = JSON.stringify(latestDataList, null, 2);
-      fs.writeFileSync(options.latest, latestFormattedData);
-      console.log(`最新データを ${options.latest} に保存しました✨`);
-      
-      // 各統計データの最新情報を表示
-      console.log('\n📊 最新データ情報:');
-      latestDataList.forEach((latestData, index) => {
-        if (latestData.GET_STATS_DATA?.STATISTICAL_DATA?.DATA_INF?.VALUE?.[0]) {
-          const latestValue = latestData.GET_STATS_DATA.STATISTICAL_DATA.DATA_INF.VALUE[0];
-          const tableInfo = latestData.GET_STATS_DATA?.STATISTICAL_DATA?.TABLE_INF;
-          const statId = tableInfo?.['@id'] || 'N/A';
-          
-          console.log(`\n📈 データセット ${index + 1}:`);
-          console.log(`- 統計ID: ${statId}`);
-          console.log(`- 統計名: ${tableInfo?.STATISTICS_NAME || 'N/A'}`);
-          
-          // カテゴリー情報を追加
-          if (tableInfo) {
-            const mainCategory = tableInfo.MAIN_CATEGORY?.$|| 'N/A';
-            const subCategory = tableInfo.SUB_CATEGORY?.$|| 'N/A';
-            console.log(`- 主カテゴリー: ${mainCategory}`);
-            console.log(`- 副カテゴリー: ${subCategory}`);
-          }
-          
-          // 取得データのカテゴリー情報を表示
-          const categoryInfo = extractCategoryInfo(latestData);
-          if (categoryInfo && categoryInfo.classes && categoryInfo.classes.length > 0) {
-            const catClass = categoryInfo.classes[0];
-            console.log(`- データ項目: ${catClass.name} (${catClass.unit || '単位なし'})`);
-          }
-          
-          // 時間情報の取得
-          let timeName = latestValue['@time'];
-          // CLASS_INFから時間名を取得
-          const timeClasses = latestData.GET_STATS_DATA?.STATISTICAL_DATA?.CLASS_INF?.CLASS_OBJ?.find(obj => obj['@id'] === 'time')?.CLASS;
-          if (timeClasses) {
-            const timeClass = Array.isArray(timeClasses) 
-              ? timeClasses.find(c => c['@code'] === latestValue['@time']) 
-              : timeClasses['@code'] === latestValue['@time'] ? timeClasses : null;
-            
-            if (timeClass) {
-              timeName = timeClass['@name'] || timeName;
-            }
-          }
-          
-          console.log(`- 時点: ${timeName}`);
-          console.log(`- 値: ${latestValue['$']} ${latestValue['@unit'] || ''}`);
+    // 各統計データの最新情報を抽出
+    const latestDataList = results.map(data => extractLatestData(data));
+    const latestFormattedData = JSON.stringify(latestDataList, null, 2);
+    
+    // 最新データを保存
+    saveDataToFile(outputFolder, 'latest.json', latestFormattedData);
+    
+    // 最新データの要約を保存
+    saveLatestDataSummary(latestDataList, outputFolder);
+    
+    // 最新データの情報をコンソールに表示
+    console.log('\n📊 最新データ情報:');
+    latestDataList.forEach((latestData, index) => {
+      if (latestData.GET_STATS_DATA?.STATISTICAL_DATA?.DATA_INF?.VALUE?.[0]) {
+        const latestValue = latestData.GET_STATS_DATA.STATISTICAL_DATA.DATA_INF.VALUE[0];
+        const tableInfo = latestData.GET_STATS_DATA?.STATISTICAL_DATA?.TABLE_INF;
+        const statId = tableInfo?.['@id'] || 'N/A';
+        
+        console.log(`\n📈 データセット ${index + 1}:`);
+        console.log(`- 統計ID: ${statId}`);
+        console.log(`- 統計名: ${tableInfo?.STATISTICS_NAME || 'N/A'}`);
+        
+        // カテゴリー情報を表示
+        if (tableInfo) {
+          const mainCategory = tableInfo.MAIN_CATEGORY?.$|| 'N/A';
+          const subCategory = tableInfo.SUB_CATEGORY?.$|| 'N/A';
+          console.log(`- 主カテゴリー: ${mainCategory}`);
+          console.log(`- 副カテゴリー: ${subCategory}`);
         }
-      });
-      
-      // 最新データの要約をテキストファイルに保存
-      const summaryFilename = saveLatestDataSummary(latestDataList);
-    }
+        
+        // 取得データのカテゴリー情報を表示
+        const categoryInfo = extractCategoryInfo(latestData);
+        if (categoryInfo && categoryInfo.classes && categoryInfo.classes.length > 0) {
+          const catClass = categoryInfo.classes[0];
+          console.log(`- データ項目: ${catClass.name} (${catClass.unit || '単位なし'})`);
+        }
+        
+        // 時間情報の取得
+        let timeName = latestValue['@time'];
+        // CLASS_INFから時間名を取得
+        const timeClasses = latestData.GET_STATS_DATA?.STATISTICAL_DATA?.CLASS_INF?.CLASS_OBJ?.find(obj => obj['@id'] === 'time')?.CLASS;
+        if (timeClasses) {
+          const timeClass = Array.isArray(timeClasses) 
+            ? timeClasses.find(c => c['@code'] === latestValue['@time']) 
+            : timeClasses['@code'] === latestValue['@time'] ? timeClasses : null;
+          
+          if (timeClass) {
+            timeName = timeClass['@name'] || timeName;
+          }
+        }
+        
+        console.log(`- 時点: ${timeName}`);
+        console.log(`- 値: ${latestValue['$']} ${latestValue['@unit'] || ''}`);
+      }
+    });
+    
+    console.log(`\n✅ すべての処理が完了しました！出力フォルダ: ${outputFolder}`);
     
   } catch (error) {
     console.error('エラー発生しちゃいました💦:', error.message);
