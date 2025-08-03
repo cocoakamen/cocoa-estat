@@ -1,0 +1,21 @@
+{
+  "name": "cocoa-estat",
+  "version": "1.0.0",
+  "main": "index.js",
+  "bin": {
+    "cocoa-estat": "./index.js"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node index.js"
+  },
+  "keywords": ["e-stat", "statistics", "japan", "api", "cli"],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "description": "A command-line tool to fetch statistical data from e-Stat API for specified municipalities",
+  "dependencies": {
+    "axios": "^1.11.0",
+    "commander": "^14.0.0"
+  }
+}
