@@ -15,8 +15,7 @@ program
   .version('1.0.0')
   .requiredOption('-a, --appId <id>', 'e-Stat API アプリケーションID')
   .requiredOption('-m, --municipalityId <id>', '自治体ID（地域コード）')
-  .option('-s, --statsId <id>', '統計データID（複数指定する場合はカンマ区切り）')
-  .option('-o, --output <file>', '出力ファイルパス（指定がなければコンソールに出力）')
+  .option('-o, --output <dir>', '出力ディレクトリのベースパス（デフォルト: ./output）')
   .option('-c, --config <file>', '設定ファイルのパス')
   .option('--latest <file>', '最新データのみを指定ファイルに出力')
   .parse(process.argv);
@@ -89,18 +88,15 @@ if (typeof options.statsId === 'string' && options.statsId.includes(',')) {
  */
 function normalizeStatsData() {
   // statsDataが既に定義されている場合はそれを使用
-  if (Array.isArray(options.statsData)) {
+  if (Array.isArray(options.statsData) && options.statsData.length > 0) {
     return options.statsData;
   }
   
-  // 単一または配列形式のstatsIdから統計データ設定を構築
-  const statsIds = Array.isArray(options.statsId) ? options.statsId : [options.statsId];
-  
-  return statsIds.map(statsId => ({
-    statsId,
-    cdCat01: options.cdCat01,
-    cdTimeFrom: options.cdTimeFrom
-  }));
+  // 設定ファイルがなく、statsDataも定義されていない場合はエラー
+  console.error('エラー: 統計データが指定されていません💦');
+  console.error('設定ファイル（cocoa-estat.config.js）に、取得したい統計データIDを指定してください');
+  console.error('例: module.exports = { statsData: [{ statsId: "00200502" }] }');
+  process.exit(1);
 }
 
 /**
